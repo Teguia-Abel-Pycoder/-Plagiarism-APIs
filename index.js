@@ -17,11 +17,9 @@ const preprocessText = (text) => {
   const words = text.split(/\s+/);
   const filteredWords = stopwords.removeStopwords(words);
   
-  // Return the processed text as an array of words
   return filteredWords;
 };
 
-// Route to upload files and check plagiarism
 app.post('/check-plagiarism', upload.array('files', 5), async (req, res) => {
   // Check if files are uploaded
   if (!req.files || req.files.length < 2) {
@@ -46,7 +44,6 @@ app.post('/check-plagiarism', upload.array('files', 5), async (req, res) => {
 
       console.log(`Extracted Text from ${file.originalname}:`, text); // Log extracted text
 
-      // Preprocess the extracted text
       const preprocessedText = preprocessText(text);
       texts.push({ file: file.originalname, text: preprocessedText });
     }
@@ -70,7 +67,6 @@ app.post('/check-plagiarism', upload.array('files', 5), async (req, res) => {
       }
     }
 
-    // Respond with plagiarism results
     res.json({
       message: 'Plagiarism check complete.',
       plagiarismResults,

@@ -1,127 +1,164 @@
 const express = require('express');
 const multer = require('multer');
-const path = require('path');
+const pdf = require('pdf-parse');
+const mammoth = require('mammoth');
 const fs = require('fs');
-const pdfParse = require('pdf-parse');
-const textract = require('textract');
-const stopwords = require('stopword');
-const natural = require('natural');
+const path = require('path');
+const stringSimilarity = require('string-similarity');
 
+// Initialize the app
 const app = express();
+
+// Multer setup for file uploads
 const upload = multer({ dest: 'uploads/' });
 
-
+// Function to extract text from a PDF file
 const extractTextFromPDF = async (filePath) => {
-  const dataBuffer = fs.readFileSync(filePath);
-  const pdfData = await pdfParse(dataBuffer);
-  return pdfData.text;
+  const buffer = fs.readFileSync(filePath);
+  const data = await pdf(buffer);
+  return data.text;
 };
 
-const extractTextFromDOCX = (filePath) => {
-  return new Promise((resolve, reject) => {
-    textract.fromFileWithPath(filePath, (error, text) => {
-      if (error) {
-        console.error('Error extracting DOCX:', error);
-        return reject(error);
-      }
-      resolve(text);
-    });
-  });
+// Function to extract text from a DOCX file
+const extractTextFromDOCX = async (filePath) => {
+  const buffer = fs.readFileSync(filePath);
+  const result = await mammoth.extractRawText({ buffer });
+  return result.value;
 };
 
-
-// Function to extract text from TXT
+// Function to extract text from a TXT file
 const extractTextFromTXT = (filePath) => {
   return fs.readFileSync(filePath, 'utf-8');
 };
 
-// Cosine Similarity Calculation
-const cosineSimilarity = (tokens1, tokens2) => {
-  const termFreq1 = termFrequency(tokens1);
-  const termFreq2 = termFrequency(tokens2);
+// Function to extract metadata from the file
+const extractFileMetadata = (filePath) => {
+  const stats = fs.statSync(filePath);
+  const fileName = path.basename(filePath);
+  const fileSize = (stats.size / 1024).toFixed(2) + ' KB';
+  const fileType = path.extname(filePath).substring(1).toUpperCase();
+  const modifiedDate = stats.mtime.toLocaleString();
 
-  const terms = new Set([...Object.keys(termFreq1), ...Object.keys(termFreq2)]);
+  return {
+    fileName,
+    fileSize,
+    fileType,
+    modifiedDate,
+  };
+};
 
-  let dotProduct = 0;
-  let magnitude1 = 0;
-  let magnitude2 = 0;
+// Main function to extract text based on file type
+const extractText = async (file) => {
+  const mimeType = file.mimetype;
 
-  for (const term of terms) {
-    const freq1 = termFreq1[term] || 0;
-    const freq2 = termFreq2[term] || 0;
-
-    dotProduct += freq1 * freq2;
-    magnitude1 += freq1 * freq1;
-    magnitude2 += freq2 * freq2;
+  if (mimeType === 'application/pdf') {
+    return await extractTextFromPDF(file.path);
+  } else if (
+    mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  ) {
+    return await extractTextFromDOCX(file.path);
+  } else if (mimeType === 'text/plain') {
+    return extractTextFromTXT(file.path);
+  } else {
+    throw new Error(`Unsupported file type: ${mimeType}`);
   }
-
-  if (magnitude1 === 0 || magnitude2 === 0) return 0;
-  return dotProduct / (Math.sqrt(magnitude1) * Math.sqrt(magnitude2));
 };
 
-const termFrequency = (tokens) => {
-  return tokens.reduce((freq, token) => {
-    freq[token] = (freq[token] || 0) + 1;
-    return freq;
-  }, {});
+// Function to split text into smaller chunks (e.g., sentences, paragraphs, lines)
+const splitTextIntoChunks = (text) => {
+  return text.split('\n').filter((line) => line.trim() !== ''); // Split by line or paragraph
 };
 
-// Preprocess text by removing stopwords and non-alphanumeric characters
-const preprocessText = (text) => {
-  text = text.toLowerCase().replace(/[^a-z0-9\s]/g, '');
-  const words = text.split(/\s+/);
-  return stopwords.removeStopwords(words);
+// Function to compare documents and highlight matching sections
+const getSimilarSections = (text1, text2) => {
+  const threshold = 0.7; // Define the threshold for similarity
+  const chunks1 = splitTextIntoChunks(text1);
+  const chunks2 = splitTextIntoChunks(text2);
+
+  let similarSections = [];
+
+  chunks1.forEach((chunk1, index1) => {
+    chunks2.forEach((chunk2, index2) => {
+      const similarity = stringSimilarity.compareTwoStrings(chunk1, chunk2);
+      if (similarity >= threshold) {
+        similarSections.push({
+          section1: chunk1,
+          section2: chunk2,
+          similarity: (similarity * 100).toFixed(2) + '%',
+          location: {
+            file1: `Paragraph/Line ${index1 + 1}`,
+            file2: `Paragraph/Line ${index2 + 1}`,
+          },
+        });
+      }
+    });
+  });
+
+  return similarSections;
 };
 
-// Endpoint for plagiarism check
-app.post('/check-plagiarism', upload.array('files', 5), async (req, res) => {
-  if (!req.files || req.files.length < 2) {
-    return res.status(400).send({ error: 'At least two files are required' });
-  }
-
+// Route to upload and compare files
+// Route to upload and compare files
+app.post('/upload', upload.array('documents', 10), async (req, res) => {
   try {
-    const texts = [];
-    for (let file of req.files) {
-      const filePath = file.path;
-      const ext = path.extname(file.originalname).toLowerCase();
-
-      let text = '';
-      if (ext === '.pdf') {
-        text = await extractTextFromPDF(filePath);
-      } else if (ext === '.docx') {
-        text = await extractTextFromDOCX(filePath);
-      } else if (ext === '.txt') {
-        text = extractTextFromTXT(filePath);
-      }
-
-      const preprocessedText = preprocessText(text);
-      texts.push({ file: file.originalname, text: preprocessedText });
+    const files = req.files;
+    if (!files || files.length < 2) {
+      return res.status(400).send({ error: 'At least two files are required for comparison.' });
     }
 
-    const plagiarismResults = [];
-    const threshold = 0.2;
+    const comparisonResults = [];
 
-    for (let i = 0; i < texts.length; i++) {
-      for (let j = i + 1; j < texts.length; j++) {
-        const similarity = cosineSimilarity(texts[i].text, texts[j].text);
+    // Loop through each pair of files for comparison
+    for (let i = 0; i < files.length; i++) {
+      for (let j = i + 1; j < files.length; j++) {
+        const file1 = files[i];
+        const file2 = files[j];
 
-        if (similarity >= threshold) {
-          plagiarismResults.push({
-            document1: texts[i].file,
-            document2: texts[j].file,
-            similarityPercentage: (similarity * 100).toFixed(2),
-          });
-        }
+        // Extract text from both files
+        const text1 = await extractText(file1);
+        const text2 = await extractText(file2);
+
+        // Get similar sections between the two extracted texts
+        const similarSections = getSimilarSections(text1, text2);
+
+        // Get file metadata for both files
+        const file1Metadata = extractFileMetadata(file1.path);
+        const file2Metadata = extractFileMetadata(file2.path);
+
+        // Push the result of the comparison to the result array with original filenames
+        comparisonResults.push({
+          file1: {
+            fileName: file1.originalname, // Using the original filename
+            fileSize: file1.size,
+            fileType: file1.mimetype,
+            modifiedDate: file1.lastModifiedDate,
+          },
+          file2: {
+            fileName: file2.originalname, // Using the original filename
+            fileSize: file2.size,
+            fileType: file2.mimetype,
+            modifiedDate: file2.lastModifiedDate,
+          },
+          similarity: similarSections.length > 0 ? "Matches Found" : "No significant similarities found",
+          similarSections
+        });
       }
     }
 
-    res.json({ message: 'Plagiarism check complete.', plagiarismResults });
+    res.json({
+      message: 'Comparison complete',
+      results: comparisonResults
+    });
   } catch (error) {
     console.error(error);
-    res.status(500).send({ error: 'Error processing files' });
+    res.status(500).send({ error: 'An error occurred during comparison.' });
   }
 });
 
-app.listen(3000, () => {
-  console.log('Server running on http://localhost:3000');
+
+
+// Start server
+const PORT = 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
 });

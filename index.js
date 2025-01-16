@@ -5,9 +5,17 @@ const mammoth = require('mammoth');
 const fs = require('fs');
 const path = require('path');
 const stringSimilarity = require('string-similarity');
+const cors = require('cors');
 
 // Initialize the app
 const app = express();
+
+// CORS setup to allow requests from the frontend
+app.use(cors({
+  origin: 'http://127.0.0.1:5500',  // Allow your local frontend to make requests
+  methods: ['GET', 'POST'],        // Allow only GET and POST methods
+  allowedHeaders: ['Content-Type'] // Allow the Content-Type header
+}));
 
 // Multer setup for file uploads
 const upload = multer({ dest: 'uploads/' });
@@ -98,8 +106,9 @@ const getSimilarSections = (text1, text2) => {
 };
 
 // Route to upload and compare files
-// Route to upload and compare files
 app.post('/upload', upload.array('documents', 10), async (req, res) => {
+  console.log('Received files:', req.files);  // Debugging: Log received files
+
   try {
     const files = req.files;
     if (!files || files.length < 2) {
@@ -154,8 +163,6 @@ app.post('/upload', upload.array('documents', 10), async (req, res) => {
     res.status(500).send({ error: 'An error occurred during comparison.' });
   }
 });
-
-
 
 // Start server
 const PORT = 3000;

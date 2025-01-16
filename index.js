@@ -10,7 +10,7 @@ const cors = require('cors');
 // Initialize the app
 const app = express();
 app.use(cors({
-  origin: 'http://127.0.0.1:5500',  // Allow your local frontend to make requests
+  origin: 'https://plagiarism-fraud-detection-wgal.vercel.app',  // Allow your local frontend to make requests
   methods: ['GET', 'POST'],        // Allow only GET and POST methods
   allowedHeaders: ['Content-Type'] // Allow the Content-Type header
 }));

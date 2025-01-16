@@ -9,14 +9,11 @@ const cors = require('cors');
 
 // Initialize the app
 const app = express();
-
-// CORS setup to allow requests from the frontend
 app.use(cors({
   origin: 'http://127.0.0.1:5500',  // Allow your local frontend to make requests
   methods: ['GET', 'POST'],        // Allow only GET and POST methods
   allowedHeaders: ['Content-Type'] // Allow the Content-Type header
 }));
-
 // Multer setup for file uploads
 const upload = multer({ dest: 'uploads/' });
 
@@ -105,10 +102,15 @@ const getSimilarSections = (text1, text2) => {
   return similarSections;
 };
 
+// Function to calculate the average similarity from multiple pairs
+const calculateGlobalSimilarity = (similarityScores) => {
+  const totalSimilarity = similarityScores.reduce((acc, score) => acc + score, 0);
+  const averageSimilarity = totalSimilarity / similarityScores.length;
+  return averageSimilarity.toFixed(2); // Round to two decimal places
+};
+
 // Route to upload and compare files
 app.post('/upload', upload.array('documents', 10), async (req, res) => {
-  console.log('Received files:', req.files);  // Debugging: Log received files
-
   try {
     const files = req.files;
     if (!files || files.length < 2) {
@@ -116,6 +118,7 @@ app.post('/upload', upload.array('documents', 10), async (req, res) => {
     }
 
     const comparisonResults = [];
+    let similarityScores = []; // Array to hold similarity scores for each pair
 
     // Loop through each pair of files for comparison
     for (let i = 0; i < files.length; i++) {
@@ -151,12 +154,20 @@ app.post('/upload', upload.array('documents', 10), async (req, res) => {
           similarity: similarSections.length > 0 ? "Matches Found" : "No significant similarities found",
           similarSections
         });
+
+        // Calculate the similarity for the current file pair and add to scores
+        const pairSimilarity = (similarSections.length / Math.max(text1.split('\n').length, text2.split('\n').length)) * 100;
+        similarityScores.push(pairSimilarity);
       }
     }
 
+    // Calculate the global similarity
+    const globalSimilarity = calculateGlobalSimilarity(similarityScores);
+
     res.json({
       message: 'Comparison complete',
-      results: comparisonResults
+      results: comparisonResults,
+      globalSimilarity: `${globalSimilarity}%`
     });
   } catch (error) {
     console.error(error);

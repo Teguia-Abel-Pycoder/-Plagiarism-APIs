@@ -7,7 +7,7 @@ const path = require('path');
 const stringSimilarity = require('string-similarity');
 const cors = require('cors');
 
-// Initialize the a
+// Initialize the 
 const app = express();
 app.use(cors({
   origin: 'https://plagiarism-fraud-detection-wgal.vercel.app',  // Allow your local frontend to make requests

@@ -11,7 +11,7 @@ const cors = require('cors');
 const app = express();
 app.use(cors({
   origin: 'https://plagiarism-fraud-detection-wgal.vercel.app',  // Allow your local frontend to make requests
-  methods: ['GET', 'POST'],    // Allow only GET and POST methods
+  methods: ['GET', 'POST'],   // Allow only GET and POST methods
   allowedHeaders: ['Content-Type'] // Allow the Content-Type header
 }));
 // Multer setup for file uploads
